@@ -27,7 +27,7 @@ defmodule Chat.Presence do
 
   @doc "Check if a specific user is online anywhere."
   def user_online?(user_id) do
-    case get(Chat.Presence, "users:#{user_id}") do
+    case Phoenix.Presence.get_by_key(Chat.Presence, "users:#{user_id}", user_id) do
       %{metas: [_ | _]} -> true
       _ -> false
     end

@@ -76,8 +76,9 @@ defmodule Chat.Auth do
       "type" => "refresh"
     }
 
-    {:ok, access_token}  = Chat.Auth.Token.generate_and_sign(access_claims)
-    {:ok, refresh_token} = Chat.Auth.Token.generate_and_sign(refresh_claims)
+    signer = Chat.Auth.Token.signer()
+    {:ok, access_token}  = Chat.Auth.Token.generate_and_sign(access_claims, signer)
+    {:ok, refresh_token} = Chat.Auth.Token.generate_and_sign(refresh_claims, signer)
 
     {:ok, %{
       access_token:  access_token,
@@ -93,7 +94,7 @@ defmodule Chat.Auth do
     if revoked?(token) do
       {:error, :token_revoked}
     else
-      case Chat.Auth.Token.verify_and_validate(token) do
+      case Chat.Auth.Token.verify_and_validate(token, Chat.Auth.Token.signer()) do
         {:ok, claims} ->
           now = System.system_time(:second)
           if Map.get(claims, "exp", 0) > now do
@@ -159,19 +160,11 @@ defmodule Chat.Auth.Token do
     default_claims(skip: [:iat, :exp, :iss])
   end
 
-  defp signer do
+  def signer do
     secret =
       Application.get_env(:chat, Chat.Auth.Guardian, [])
       |> Keyword.get(:secret_key, "dev_fallback_secret_min_32_chars!!")
 
     Joken.Signer.create("HS256", secret)
-  end
-
-  def generate_and_sign(claims) do
-    generate_and_sign(claims, signer())
-  end
-
-  def verify_and_validate(token) do
-    verify_and_validate(token, signer())
   end
 end

@@ -7,8 +7,7 @@ defmodule ChatWeb do
   def controller do
     quote do
       use Phoenix.Controller,
-        formats: [:json],
-        layouts: false
+        formats: [:json]
 
       import Plug.Conn
       alias ChatWeb.Router.Helpers, as: Routes
