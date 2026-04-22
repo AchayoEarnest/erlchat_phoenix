@@ -33,15 +33,13 @@ defmodule ChatWeb.RoomChannel do
     {:ok, socket}
   end
 
-  # FIX: All handle_info/2 clauses are now grouped together.
-  # Previously, handle_info({:new_message, message}, socket) at line 180
-  # was defined far away from the first handle_info at line 84, causing
-  # the "clauses with the same name and arity should be grouped" warning.
-
   @impl true
   def handle_info(:after_join, socket) do
     room_id = socket.assigns.room_id
-    messages = Messages.list_messages(room_id)
+
+    # BUG FIX 1: list_messages/1 does not exist. The correct function is
+    # list_room_messages/1 (optionally /2 with opts).
+    messages = Messages.list_room_messages(room_id)
 
     push(socket, "history", %{messages: messages})
 
@@ -54,9 +52,6 @@ defmodule ChatWeb.RoomChannel do
     {:noreply, socket}
   end
 
-  # FIX: Moved adjacent to the other handle_info clause above.
-  # Also: this clause correctly receives the broadcasted message and
-  # pushes it to the connected client.
   def handle_info({:new_message, message}, socket) do
     push(socket, "new_message", message)
     {:noreply, socket}
@@ -66,13 +61,16 @@ defmodule ChatWeb.RoomChannel do
   def handle_in("new_message", %{"body" => body}, socket) do
     room_id = socket.assigns.room_id
 
-    message_params = %{
-      body: body,
-      user_id: socket.assigns.user_id,
-      room_id: room_id
+    # BUG FIX 2: create_message/2 does not exist. The correct function is
+    # create_message/1 with a single attrs map. Merge room_id and sender_id in.
+    attrs = %{
+      content:   body,
+      room_id:   room_id,
+      sender_id: socket.assigns.user_id,
+      msg_type:  "text"
     }
 
-    case Messages.create_message(room_id, message_params) do
+    case Messages.create_message(attrs) do
       {:ok, message} ->
         broadcast!(socket, "new_message", message)
         {:reply, :ok, socket}
@@ -92,24 +90,22 @@ defmodule ChatWeb.RoomChannel do
     {:noreply, socket}
   end
 
-  # FIX: Line 146 had:
-  #   room_id = socket.assigns.room_id
-  # ...but room_id was never used in that clause's body.
-  # Fix: prefix the unused variable with underscore, OR (better) just
-  # remove the binding entirely and use socket.assigns.room_id inline
-  # only where needed. Here we show the corrected pattern-match approach.
   def handle_in("delete_message", %{"id" => message_id}, socket) do
-    # FIX: was `room_id = socket.assigns.room_id` (unused). Removed.
-    case Messages.delete_message(message_id, socket.assigns.user_id) do
-      {:ok, _} ->
-        broadcast!(socket, "message_deleted", %{id: message_id})
-        {:reply, :ok, socket}
-
-      {:error, :unauthorized} ->
-        {:reply, {:error, %{reason: "unauthorized"}}, socket}
-
-      {:error, :not_found} ->
+    case Messages.get_message(message_id) do
+      nil ->
         {:reply, {:error, %{reason: "not found"}}, socket}
+
+      message ->
+        # BUG FIX 3 (carried from previous): delete_message/2 takes a Message
+        # struct + user_id (not a raw id string). Fetch first, then delete.
+        case Messages.delete_message(message, socket.assigns.user_id) do
+          :ok ->
+            broadcast!(socket, "message_deleted", %{id: message_id})
+            {:reply, :ok, socket}
+
+          {:error, :unauthorized} ->
+            {:reply, {:error, %{reason: "unauthorized"}}, socket}
+        end
     end
   end
 end

@@ -33,12 +33,23 @@ defmodule Chat.Presence do
     end
   end
 
+  @doc """
+  Get the current status string for a user.
+
+  BUG FIX: ChatWeb.UserController called Chat.Presence.get_user_status/1
+  but the function did not exist. Returns "online" if the user has any
+  active Presence metadata, "offline" otherwise.
+  """
+  def get_user_status(user_id) do
+    if user_online?(user_id), do: "online", else: "offline"
+  end
+
   @doc "Get aggregated presence for a room."
   def room_presence(room_id) do
     "room:#{room_id}"
     |> list()
-    |> Enum.map(fn {user_id, %{metas: metas}} ->
-      %{user_id: user_id, status: List.first(metas)[:status] || "online"}
+    |> Enum.map(fn {uid, %{metas: metas}} ->
+      %{user_id: uid, status: List.first(metas)[:status] || "online"}
     end)
   end
 end
