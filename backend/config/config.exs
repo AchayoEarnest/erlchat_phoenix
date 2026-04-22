@@ -1,6 +1,11 @@
 # config/config.exs — base configuration
 import Config
 
+# BUG FIX: Expose the Mix env as a compile-time config key so that
+# Application.compile_env(:chat, :env) works in ChatWeb.Plugs.CORS
+# without calling Mix.env() at runtime (which crashes in releases).
+config :chat, :env, Mix.env()
+
 config :chat,
   ecto_repos: [Chat.Repo],
   generators: [timestamp_type: :utc_datetime]

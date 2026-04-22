@@ -1,6 +1,4 @@
 // services/api.ts — Phoenix version
-// Key difference from v1: Phoenix returns `inserted_at` / `updated_at`
-// (Ecto timestamps) instead of `created_at`.
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/store/chat';
 import { Room, Message, User, AuthTokens, FileAttachment } from '@/types';
@@ -50,11 +48,16 @@ class ApiService {
   // ── Auth ──────────────────────────────────────────────────────
 
   async register(username: string, email: string, password: string) {
-    const res = await this.client.post('/auth/register', { username, email, password });
+    // BUG FIX: backend AuthController.register/2 expects %{"user" => attrs}.
+    // Was sending {username, email, password} flat which never matched.
+    const res = await this.client.post('/auth/register', {
+      user: { username, email, password },
+    });
     return res.data as { user: User; tokens: AuthTokens };
   }
 
   async login(email: string, password: string) {
+    // Backend AuthController.login/2 expects flat {email, password} — correct.
     const res = await this.client.post('/auth/login', { email, password });
     return res.data as { user: User; tokens: AuthTokens };
   }
@@ -93,7 +96,9 @@ class ApiService {
   }
 
   async createRoom(name: string, type: 'public' | 'private', description?: string) {
-    const res = await this.client.post('/rooms', { name, type, description });
+    // BUG FIX: backend RoomController.create/2 expects %{"room" => room_params}.
+    // Was sending {name, type, description} flat which didn't match the pattern.
+    const res = await this.client.post('/rooms', { room: { name, type, description } });
     return res.data.data as Room;
   }
 
@@ -115,7 +120,9 @@ class ApiService {
   }
 
   async editMessage(id: string, content: string) {
-    const res = await this.client.patch(`/messages/${id}`, { content });
+    // BUG FIX: backend MessageController.update/2 expects
+    // %{"message" => %{"content" => content}}. Was sending {content} flat.
+    const res = await this.client.patch(`/messages/${id}`, { message: { content } });
     return res.data.data as Message;
   }
 
@@ -124,7 +131,9 @@ class ApiService {
   }
 
   async reactToMessage(id: string, reaction: string) {
-    await this.client.post(`/messages/${id}/react`, { reaction });
+    // BUG FIX: backend MessageController.react/2 expects %{"emoji" => emoji}.
+    // Was sending { reaction } which didn't match.
+    await this.client.post(`/messages/${id}/react`, { emoji: reaction });
   }
 
   async searchMessages(query: string, roomId?: string) {

@@ -116,13 +116,19 @@ defmodule ChatWeb.Plugs.CORS do
     "https://yourdomain.com"
   ]
 
+  # BUG FIX: Mix.env() is NOT available at runtime in production releases
+  # (the Mix module is stripped). Using it inside call/2 causes a
+  # UndefinedFunctionError at runtime. Replace with Application.compile_env/3
+  # which is resolved at compile time and baked into the BEAM bytecode.
+  @is_dev Application.compile_env(:chat, :env, :prod) == :dev
+
   def init(opts), do: opts
 
   def call(conn, _opts) do
     origin = get_req_header(conn, "origin") |> List.first()
 
     allowed_origin =
-      if origin in @allowed_origins or Mix.env() == :dev do
+      if @is_dev or origin in @allowed_origins do
         origin || "*"
       else
         "*"

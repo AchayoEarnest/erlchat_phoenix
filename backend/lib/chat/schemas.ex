@@ -68,9 +68,13 @@ defmodule Chat.Rooms.Room do
   @derive {Jason.Encoder, only: [:id, :name, :description, :type, :owner_id, :inserted_at]}
 
   schema "rooms" do
-    field :name,        :string
-    field :description, :string
-    field :type,        :string, default: "public"
+    field :name,         :string
+    field :description,  :string
+    field :type,         :string, default: "public"
+
+    # BUG FIX: member_count is used as a virtual select in list_user_rooms/1.
+    # Without this field the struct update %{r | member_count: ...} crashes.
+    field :member_count, :integer, virtual: true, default: 0
 
     belongs_to :owner, Chat.Accounts.User
     has_many   :room_members, Chat.Rooms.RoomMember
@@ -139,7 +143,6 @@ defmodule Chat.Messages.Message do
     field :edited,       :boolean, default: false
     field :deleted_at,   :utc_datetime
 
-    # Virtual fields populated by queries
     field :thread_count, :integer, virtual: true, default: 0
     field :reactions,    :map,     virtual: true, default: %{}
 
@@ -147,7 +150,7 @@ defmodule Chat.Messages.Message do
     belongs_to :sender, Chat.Accounts.User, foreign_key: :sender_id
     belongs_to :thread, __MODULE__, foreign_key: :thread_id
 
-    has_many :replies,    __MODULE__, foreign_key: :thread_id
+    has_many :replies,       __MODULE__, foreign_key: :thread_id
     has_many :msg_reactions, Chat.Messages.Reaction
 
     timestamps(type: :utc_datetime)

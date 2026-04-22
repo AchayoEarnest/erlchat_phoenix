@@ -1,16 +1,9 @@
 defmodule Chat.Analytics do
-  @moduledoc """
-  Simple analytics GenServer that counts events in memory.
-  Registered under its module name so callers can GenServer.cast(__MODULE__, ...).
-  """
+  @moduledoc "Simple analytics GenServer that counts events in memory."
   use GenServer
-
   require Logger
 
-  # --- Client API ---
-
   def start_link(opts \\ []) do
-    # BUG FIX: Must register under __MODULE__ so that record/2 can cast by name.
     GenServer.start_link(__MODULE__, %{}, Keyword.put_new(opts, :name, __MODULE__))
   end
 
@@ -21,8 +14,6 @@ defmodule Chat.Analytics do
   def get_stats do
     GenServer.call(__MODULE__, :get_stats)
   end
-
-  # --- Server Callbacks ---
 
   @impl true
   def init(state), do: {:ok, state}
@@ -62,10 +53,6 @@ defmodule Chat.RateLimiter do
   @moduledoc """
   ETS-backed rate limiter GenServer.
   Creates and owns the :rate_limits ETS table used by ChatWeb.Plugs.RateLimiter.
-
-  BUG FIX: This module was referenced in Chat.Application's supervision tree
-  but did not exist, crashing the app at startup with:
-    "The module Chat.RateLimiter was given as a child to a supervisor but it does not exist"
   """
   use GenServer
 
@@ -77,11 +64,7 @@ defmodule Chat.RateLimiter do
 
   @impl true
   def init(_opts) do
-    # Create the ETS table that ChatWeb.Plugs.RateLimiter reads/writes.
-    # :public so the Plug can access it from any process.
-    # :set so each {ip, window} key is unique.
     :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
-    # Periodically sweep expired windows to prevent unbounded table growth.
     schedule_sweep()
     {:ok, %{}}
   end
@@ -89,7 +72,6 @@ defmodule Chat.RateLimiter do
   @impl true
   def handle_info(:sweep, state) do
     now = System.monotonic_time(:millisecond)
-    # Delete entries whose window started more than 2 minutes ago.
     :ets.select_delete(@table, [
       {{{:_, :_}, :_, :"$1"}, [{:<, :"$1", now - 120_000}], [true]}
     ])
@@ -102,15 +84,49 @@ end
 
 # ---------------------------------------------------------------------------
 
+# BUG FIX: Chat.Auth referenced :token_blacklist ETS table (via init_blacklist/0,
+# revoke/1, revoked?/1), but the table was never created in the supervision tree.
+# This module owns the ETS table and must be started before any auth checks run.
+defmodule Chat.TokenBlacklist do
+  @moduledoc """
+  GenServer that owns the :token_blacklist ETS table.
+  Provides a periodic sweep to remove expired entries and prevent
+  unbounded memory growth.
+  """
+  use GenServer
+
+  @table :token_blacklist
+  # Sweep tokens older than 31 days (refresh TTL + buffer)
+  @ttl_ms 31 * 24 * 60 * 60 * 1000
+
+  def start_link(opts \\ []) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_opts) do
+    :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
+    schedule_sweep()
+    {:ok, %{}}
+  end
+
+  @impl true
+  def handle_info(:sweep, state) do
+    cutoff = System.system_time(:second) - div(@ttl_ms, 1000)
+    :ets.select_delete(@table, [{:"$1", [{:<, {:element, 2, :"$1"}, cutoff}], [true]}])
+    schedule_sweep()
+    {:noreply, state}
+  end
+
+  defp schedule_sweep, do: Process.send_after(self(), :sweep, 60 * 60 * 1000)
+end
+
+# ---------------------------------------------------------------------------
+
 defmodule Chat.MessageQueue do
   @moduledoc """
   Offline message buffer backed by ETS.
-  Stores messages for users who are currently disconnected so they can be
-  delivered when the user reconnects.
-
-  BUG FIX: This module was referenced in Chat.Application's supervision tree
-  but did not exist, crashing the app at startup with:
-    "The module Chat.MessageQueue was given as a child to a supervisor but it does not exist"
+  Stores messages for users who are currently disconnected.
   """
   use GenServer
 
@@ -120,33 +136,25 @@ defmodule Chat.MessageQueue do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  # --- Client API ---
-
-  @doc "Enqueue a message for an offline user."
   def enqueue(user_id, message) do
     existing =
       case :ets.lookup(@table, user_id) do
         [{^user_id, msgs}] -> msgs
         [] -> []
       end
-
     :ets.insert(@table, {user_id, [message | existing]})
     :ok
   end
 
-  @doc "Drain and return all queued messages for a user (clears the queue)."
   def drain(user_id) do
     case :ets.lookup(@table, user_id) do
       [{^user_id, msgs}] ->
         :ets.delete(@table, user_id)
         Enum.reverse(msgs)
-
       [] ->
         []
     end
   end
-
-  # --- Server Callbacks ---
 
   @impl true
   def init(_opts) do
@@ -184,7 +192,6 @@ end
 
 defmodule Chat.RoomWorker do
   use GenServer
-
   require Logger
 
   def start_link(opts) do

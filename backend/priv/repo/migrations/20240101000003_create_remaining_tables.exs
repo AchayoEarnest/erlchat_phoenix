@@ -12,7 +12,13 @@ defmodule Chat.Repo.Migrations.CreateRoomMembers do
       timestamps(type: :utc_datetime, updated_at: false)
     end
 
-    create primary_key(:room_members, [:room_id, :user_id])
+    # BUG FIX: `create primary_key/2` does not exist in Ecto's migration DSL.
+    # Replaced with execute/2 (raw SQL + reversible down statement).
+    execute(
+      "ALTER TABLE room_members ADD PRIMARY KEY (room_id, user_id)",
+      "ALTER TABLE room_members DROP CONSTRAINT room_members_pkey"
+    )
+
     create index(:room_members, [:user_id])
     create index(:room_members, [:room_id], where: "banned = false")
 
@@ -45,7 +51,6 @@ defmodule Chat.Repo.Migrations.CreateMessages do
     create index(:messages, [:sender_id], where: "deleted_at IS NULL")
     create index(:messages, [:thread_id], where: "thread_id IS NOT NULL")
 
-    # Full-text search: generated tsvector column + GIN index
     execute """
       ALTER TABLE messages
         ADD COLUMN search_vec tsvector
@@ -77,11 +82,14 @@ defmodule Chat.Repo.Migrations.CreateMessageReads do
       add :message_id, references(:messages, type: :binary_id, on_delete: :delete_all), null: false
       add :user_id,    references(:users, type: :binary_id, on_delete: :delete_all),    null: false
       add :read_at,    :utc_datetime, null: false
-
-      # No updated_at needed
     end
 
-    create primary_key(:message_reads, [:message_id, :user_id])
+    # BUG FIX: same as room_members — replaced create primary_key/2 with execute/2
+    execute(
+      "ALTER TABLE message_reads ADD PRIMARY KEY (message_id, user_id)",
+      "ALTER TABLE message_reads DROP CONSTRAINT message_reads_pkey"
+    )
+
     create index(:message_reads, [:user_id])
   end
 end
@@ -98,7 +106,12 @@ defmodule Chat.Repo.Migrations.CreateMessageReactions do
       timestamps(type: :utc_datetime, updated_at: false)
     end
 
-    create primary_key(:message_reactions, [:message_id, :user_id, :reaction])
+    # BUG FIX: same fix — composite PK via execute/2
+    execute(
+      "ALTER TABLE message_reactions ADD PRIMARY KEY (message_id, user_id, reaction)",
+      "ALTER TABLE message_reactions DROP CONSTRAINT message_reactions_pkey"
+    )
+
     create index(:message_reactions, [:message_id])
   end
 end

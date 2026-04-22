@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/store/chat';
-import { wsService } from '@/services/websocket';
+import { wsService } from '@/services/phoenix-socket';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff } from 'lucide-react';
 

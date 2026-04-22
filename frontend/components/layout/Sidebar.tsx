@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { Hash, Lock, MessageCircle, Plus, LogOut, Settings, Search, ChevronDown } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { CreateRoomModal } from '@/components/chat/CreateRoomModal';
-import { wsService } from '@/services/websocket';
+import { wsService } from '@/services/phoenix-socket';
 import { useRouter } from 'next/navigation';
 
 export function Sidebar() {

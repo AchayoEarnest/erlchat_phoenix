@@ -23,8 +23,19 @@ defmodule Chat.Rooms do
     )
   end
 
-  @doc "Get a single room by ID."
-  def get_room(id), do: Repo.get(Room, id)
+  # BUG FIX: get_room/1 now returns {:ok, room} | {:error, :not_found}
+  # so it can be used directly in `with` pipelines in controllers/channels.
+  # The old Repo.get/2 returned nil | Room which caused the `with` pattern
+  # match {:ok, room} <- Rooms.get_room(id) to never match.
+  @doc "Get a single room by ID. Returns {:ok, room} or {:error, :not_found}."
+  def get_room(id) do
+    case Repo.get(Room, id) do
+      nil  -> {:error, :not_found}
+      room -> {:ok, room}
+    end
+  end
+
+  @doc "Get a room, raising Ecto.NoResultsError if not found."
   def get_room!(id), do: Repo.get!(Room, id)
 
   @doc "Get a room with members preloaded."
@@ -39,7 +50,6 @@ defmodule Chat.Rooms do
     Repo.transaction(fn ->
       room = Repo.insert!(Room.changeset(%Room{}, attrs))
 
-      # Owner is automatically an admin member
       Repo.insert!(%RoomMember{
         room_id: room.id,
         user_id: owner_id,
@@ -57,7 +67,7 @@ defmodule Chat.Rooms do
     |> Repo.update()
   end
 
-  @doc "Delete (soft) a room."
+  @doc "Delete a room."
   def delete_room(%Room{} = room) do
     Repo.delete(room)
   end

@@ -1,8 +1,4 @@
 // services/phoenix-socket.ts
-// Uses the official phoenix-channels JS client for Phoenix Socket/Channel protocol.
-// This replaces the raw WebSocket implementation — Phoenix adds heartbeat,
-// reconnect, ref tracking, and binary protocol support.
-
 import { Socket, Channel } from 'phoenix';
 import { useChatStore, useAuthStore } from '@/store/chat';
 import { Message, UserStatus } from '@/types';
@@ -12,10 +8,10 @@ type PresenceState = Record<string, { metas: Array<{ status: string; username: s
 type PresenceDiff  = { joins: PresenceState; leaves: PresenceState };
 
 class PhoenixSocketService {
-  private socket:   Socket | null    = null;
-  private channels: Map<string, Channel> = new Map();
+  private socket:      Socket | null = null;
+  private channels:    Map<string, Channel> = new Map();
   private userChannel: Channel | null = null;
-  private token: string | null = null;
+  private token:       string | null = null;
 
   // ── Connect / Disconnect ──────────────────────────────────────
 
@@ -69,7 +65,7 @@ class PhoenixSocketService {
     return this.socket?.isConnected() ?? false;
   }
 
-  // ── User channel (presence, DMs, notifications) ───────────────
+  // ── User channel (presence, notifications) ────────────────────
 
   private joinUserChannel() {
     const userId = useAuthStore.getState().user?.id;
@@ -79,19 +75,12 @@ class PhoenixSocketService {
 
     this.userChannel
       .join()
-      .receive('ok', () => {
-        console.log(`[Phoenix] Joined user:${userId}`);
-      })
-      .receive('error', (err) => {
-        console.error('[Phoenix] User channel error:', err);
-      });
+      .receive('ok', () => console.log(`[Phoenix] Joined user:${userId}`))
+      .receive('error', (err) => console.error('[Phoenix] User channel error:', err));
 
-    // Presence: full state snapshot on join
     this.userChannel.on('presence_state', (state: PresenceState) => {
       this.applyPresenceState(state);
     });
-
-    // Presence: incremental diffs
     this.userChannel.on('presence_diff', (diff: PresenceDiff) => {
       this.applyPresenceDiff(diff);
     });
@@ -111,16 +100,12 @@ class PhoenixSocketService {
 
     channel
       .join()
-      .receive('ok', () => {
-        console.log(`[Phoenix] Joined room:${roomId}`);
-      })
+      .receive('ok', () => console.log(`[Phoenix] Joined room:${roomId}`))
       .receive('error', ({ reason }: { reason: string }) => {
         console.error(`[Phoenix] Failed to join room:${roomId}:`, reason);
         toast.error(`Could not join room: ${reason}`);
       })
-      .receive('timeout', () => {
-        console.warn('[Phoenix] Join timed out, retrying…');
-      });
+      .receive('timeout', () => console.warn('[Phoenix] Join timed out, retrying…'));
 
     this.wireRoomEvents(channel, roomId);
     return channel;
@@ -137,7 +122,9 @@ class PhoenixSocketService {
   // ── Send events ───────────────────────────────────────────────
 
   sendMessage(roomId: string, content: string, threadId?: string): Promise<Message> {
-    return this.push(roomId, 'send_message', {
+    // BUG FIX: backend handle_in listens for "new_message" with key "content".
+    // Was pushing "send_message" with key "content" — event name mismatch.
+    return this.push(roomId, 'new_message', {
       content,
       thread_id: threadId ?? null,
       msg_type: 'text',
@@ -145,6 +132,7 @@ class PhoenixSocketService {
   }
 
   sendTyping(roomId: string, isTyping: boolean) {
+    // BUG FIX: backend handle_in("typing", ...) now accepts is_typing boolean.
     const channel = this.channels.get(roomId);
     channel?.push('typing', { is_typing: isTyping });
   }
@@ -174,8 +162,8 @@ class PhoenixSocketService {
 
       channel
         .push(event, payload)
-        .receive('ok',    (resp: T) => resolve(resp))
-        .receive('error', (err: unknown) => reject(err))
+        .receive('ok',     (resp: T) => resolve(resp))
+        .receive('error',  (err: unknown) => reject(err))
         .receive('timeout', () => reject(new Error('Request timed out')));
     });
   }
@@ -186,15 +174,15 @@ class PhoenixSocketService {
     // New message broadcast
     channel.on('new_message', (msg: Message) => {
       store.addMessage(roomId, msg);
-      const activeRoom = useChatStore.getState().activeRoomId;
+      const activeRoom  = useChatStore.getState().activeRoomId;
       const currentUser = useAuthStore.getState().user;
       if (msg.room_id !== activeRoom && msg.sender_id !== currentUser?.id) {
         toast(`New message in #${roomId.slice(0, 8)}`, { icon: '💬' });
       }
     });
 
-    // Message history (initial load on join)
-    channel.on('message_history', ({ messages }: { messages: Message[] }) => {
+    // BUG FIX: backend pushes "history" (not "message_history") in after_join.
+    channel.on('history', ({ messages }: { messages: Message[] }) => {
       store.setMessages(roomId, messages);
     });
 
@@ -215,13 +203,19 @@ class PhoenixSocketService {
       store.addReaction(roomId, message_id, reaction, user_id);
     });
 
-    // Typing indicators
-    channel.on('typing', ({
-      user_id, is_typing
-    }: { user_id: string; is_typing: boolean }) => {
+    // BUG FIX: backend now sends separate "typing" / "stop_typing" events.
+    // Listen for both and pass the correct boolean to setTyping.
+    channel.on('typing', ({ user_id }: { user_id: string }) => {
       const currentUser = useAuthStore.getState().user;
       if (user_id !== currentUser?.id) {
-        store.setTyping(roomId, user_id, is_typing);
+        store.setTyping(roomId, user_id, true);
+      }
+    });
+
+    channel.on('stop_typing', ({ user_id }: { user_id: string }) => {
+      const currentUser = useAuthStore.getState().user;
+      if (user_id !== currentUser?.id) {
+        store.setTyping(roomId, user_id, false);
       }
     });
 
@@ -229,7 +223,6 @@ class PhoenixSocketService {
     channel.on('user_joined', ({ user_id }: { user_id: string }) => {
       console.log(`[Room ${roomId}] User joined: ${user_id}`);
     });
-
     channel.on('user_left', ({ user_id }: { user_id: string }) => {
       console.log(`[Room ${roomId}] User left: ${user_id}`);
     });
@@ -241,11 +234,10 @@ class PhoenixSocketService {
       this.leaveRoom(roomId);
     });
 
-    // Room-level presence (per room)
+    // Room-level presence
     channel.on('presence_state', (state: PresenceState) => {
       this.applyPresenceState(state);
     });
-
     channel.on('presence_diff', (diff: PresenceDiff) => {
       this.applyPresenceDiff(diff);
     });
@@ -272,3 +264,8 @@ class PhoenixSocketService {
 
 // Singleton — one socket for the entire app lifetime
 export const phoenixSocket = new PhoenixSocketService();
+
+// BUG FIX: Sidebar, Login, and Register pages imported `wsService` from
+// `@/services/websocket` (a file that does not exist). Export an alias so
+// existing import paths resolve without touching every consumer file.
+export const wsService = phoenixSocket;

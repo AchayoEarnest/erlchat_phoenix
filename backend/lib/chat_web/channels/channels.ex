@@ -8,7 +8,6 @@ defmodule ChatWeb.UserSocket do
     case Phoenix.Token.verify(socket, "user socket", token, max_age: 86400) do
       {:ok, user_id} ->
         {:ok, assign(socket, :user_id, user_id)}
-
       {:error, _} ->
         :error
     end
@@ -35,12 +34,11 @@ defmodule ChatWeb.RoomChannel do
 
   @impl true
   def handle_info(:after_join, socket) do
-    room_id = socket.assigns.room_id
-
-    # BUG FIX 1: list_messages/1 does not exist. The correct function is
-    # list_room_messages/1 (optionally /2 with opts).
+    room_id  = socket.assigns.room_id
     messages = Messages.list_room_messages(room_id)
 
+    # BUG FIX: frontend listens for "history" — was previously mislabelled
+    # "message_history" in the socket service. Using "history" consistently.
     push(socket, "history", %{messages: messages})
 
     {:ok, _} =
@@ -58,28 +56,45 @@ defmodule ChatWeb.RoomChannel do
   end
 
   @impl true
-  def handle_in("new_message", %{"body" => body}, socket) do
-    room_id = socket.assigns.room_id
+  # BUG FIX: frontend sends "new_message" with key "content" (not "body").
+  # Updated pattern match from %{"body" => body} to %{"content" => content}.
+  def handle_in("new_message", %{"content" => content} = payload, socket) do
+    room_id  = socket.assigns.room_id
+    thread_id = Map.get(payload, "thread_id")
+    msg_type  = Map.get(payload, "msg_type", "text")
 
-    # BUG FIX 2: create_message/2 does not exist. The correct function is
-    # create_message/1 with a single attrs map. Merge room_id and sender_id in.
     attrs = %{
-      content:   body,
+      content:   content,
       room_id:   room_id,
       sender_id: socket.assigns.user_id,
-      msg_type:  "text"
+      msg_type:  msg_type,
+      thread_id: thread_id
     }
 
     case Messages.create_message(attrs) do
       {:ok, message} ->
         broadcast!(socket, "new_message", message)
-        {:reply, :ok, socket}
+        {:reply, {:ok, message}, socket}
 
       {:error, changeset} ->
         {:reply, {:error, %{errors: changeset}}, socket}
     end
   end
 
+  # BUG FIX: Frontend sends a single "typing" event with is_typing boolean.
+  # Backend now handles both cases and broadcasts the appropriate event so
+  # other clients receive correctly-typed start/stop signals.
+  def handle_in("typing", %{"is_typing" => true}, socket) do
+    broadcast_from!(socket, "typing", %{user_id: socket.assigns.user_id})
+    {:noreply, socket}
+  end
+
+  def handle_in("typing", %{"is_typing" => false}, socket) do
+    broadcast_from!(socket, "stop_typing", %{user_id: socket.assigns.user_id})
+    {:noreply, socket}
+  end
+
+  # Fallback for legacy clients that omit is_typing
   def handle_in("typing", _payload, socket) do
     broadcast_from!(socket, "typing", %{user_id: socket.assigns.user_id})
     {:noreply, socket}
@@ -90,14 +105,29 @@ defmodule ChatWeb.RoomChannel do
     {:noreply, socket}
   end
 
+  # BUG FIX: Added missing load_messages handler for cursor-based pagination.
+  # ChatWindow calls channel.push("load_messages", {before: cursor}) when the
+  # user scrolls to the top. Without this handler the push timed out silently.
+  def handle_in("load_messages", payload, socket) do
+    room_id = socket.assigns.room_id
+    before  = Map.get(payload, "before")
+
+    opts = if before, do: [before: before], else: []
+    messages = Messages.list_room_messages(room_id, opts)
+    {:reply, {:ok, %{messages: messages}}, socket}
+  end
+
+  def handle_in("read_receipt", %{"message_id" => message_id}, socket) do
+    Messages.mark_read(message_id, socket.assigns.user_id)
+    {:noreply, socket}
+  end
+
   def handle_in("delete_message", %{"id" => message_id}, socket) do
     case Messages.get_message(message_id) do
       nil ->
         {:reply, {:error, %{reason: "not found"}}, socket}
 
       message ->
-        # BUG FIX 3 (carried from previous): delete_message/2 takes a Message
-        # struct + user_id (not a raw id string). Fetch first, then delete.
         case Messages.delete_message(message, socket.assigns.user_id) do
           :ok ->
             broadcast!(socket, "message_deleted", %{id: message_id})

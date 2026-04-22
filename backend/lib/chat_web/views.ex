@@ -10,7 +10,9 @@ defmodule ChatWeb do
         formats: [:json]
 
       import Plug.Conn
-      alias ChatWeb.Router.Helpers, as: Routes
+      # BUG FIX: Router.Helpers was deprecated in Phoenix 1.6 and removed
+      # in 1.7. The alias caused a compilation error on Phoenix 1.7+.
+      # Removed entirely — use ~p sigil or hard-code paths instead.
       action_fallback ChatWeb.FallbackController
     end
   end
@@ -18,7 +20,6 @@ defmodule ChatWeb do
   def channel do
     quote do
       use Phoenix.Channel
-      import ChatWeb.ChannelHelpers
     end
   end
 
@@ -35,6 +36,62 @@ defmodule ChatWeb do
   end
 end
 
+# ── Fallback Controller ───────────────────────────────────────
+
+defmodule ChatWeb.FallbackController do
+  use Phoenix.Controller
+
+  # BUG FIX: Added handler for Ecto.Changeset errors so that
+  # `with {:ok, _} <- Repo.insert(changeset)` failures are serialised
+  # as 422 JSON rather than raising an unhandled function_clause crash.
+  def call(conn, {:error, %Ecto.Changeset{} = changeset}) do
+    errors =
+      Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+        Enum.reduce(opts, msg, fn {key, value}, acc ->
+          String.replace(acc, "%{#{key}}", to_string(value))
+        end)
+      end)
+
+    conn
+    |> put_status(:unprocessable_entity)
+    |> put_view(json: ChatWeb.ErrorJSON)
+    |> json(%{errors: errors})
+  end
+
+  def call(conn, {:error, :not_found}) do
+    conn
+    |> put_status(:not_found)
+    |> put_view(json: ChatWeb.ErrorJSON)
+    |> render(:"404")
+  end
+
+  def call(conn, {:error, :unauthorized}) do
+    conn
+    |> put_status(:unauthorized)
+    |> put_view(json: ChatWeb.ErrorJSON)
+    |> render(:"401")
+  end
+
+  def call(conn, {:error, :unprocessable_entity}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> put_view(json: ChatWeb.ErrorJSON)
+    |> render(:"422")
+  end
+
+  def call(conn, {:error, :invalid_credentials}) do
+    conn
+    |> put_status(:unauthorized)
+    |> json(%{error: "Invalid email or password"})
+  end
+
+  def call(conn, {:error, reason}) when is_binary(reason) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: reason})
+  end
+end
+
 # ── JSON Views ────────────────────────────────────────────────
 
 defmodule ChatWeb.AuthJSON do
@@ -48,12 +105,12 @@ defmodule ChatWeb.AuthJSON do
 
   defp render_user(user) do
     %{
-      id:         user.id,
-      username:   user.username,
-      email:      user.email,
-      role:       user.role,
-      avatar:     user.avatar,
-      status:     user.status,
+      id:          user.id,
+      username:    user.username,
+      email:       user.email,
+      role:        user.role,
+      avatar:      user.avatar,
+      status:      user.status,
       inserted_at: user.inserted_at
     }
   end
@@ -163,6 +220,7 @@ end
 
 defmodule ChatWeb.ErrorJSON do
   def render("404.json", _), do: %{error: "Not found"}
+  def render("401.json", _), do: %{error: "Unauthorized"}
   def render("422.json", _), do: %{error: "Unprocessable entity"}
   def render("500.json", _), do: %{error: "Internal server error"}
   def render(template, _),   do: %{error: Phoenix.Controller.status_message_from_template(template)}
