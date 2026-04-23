@@ -1,27 +1,3 @@
-defmodule ChatWeb.FallbackController do
-  use Phoenix.Controller
-
-  def call(conn, {:error, :not_found}) do
-    conn
-    |> put_status(:not_found)
-    |> put_view(json: ChatWeb.ErrorJSON)
-    |> render(:"404")
-  end
-
-  def call(conn, {:error, :unauthorized}) do
-    conn
-    |> put_status(:unauthorized)
-    |> put_view(json: ChatWeb.ErrorJSON)
-    |> render(:"401")
-  end
-
-  def call(conn, {:error, :unprocessable_entity}) do
-    conn
-    |> put_status(:unprocessable_entity)
-    |> put_view(json: ChatWeb.ErrorJSON)
-    |> render(:"422")
-  end
-end
 
 defmodule ChatWeb.RoomController do
   use ChatWeb, :controller
@@ -322,5 +298,17 @@ defmodule ChatWeb.AdminController do
 
   def rooms(conn, _params) do
     render(conn, :rooms, rooms: [])
+  end
+end
+
+defmodule ChatWeb.OptionsController do
+  @moduledoc "Handles CORS preflight OPTIONS requests globally."
+  use ChatWeb, :controller
+
+  # The CORS plug in the :api pipeline already sets the correct headers
+  # and halts with 204. This action is never actually reached — it exists
+  # only so the router has a valid target for `options "/*path"`.
+  def preflight(conn, _params) do
+    send_resp(conn, 204, "")
   end
 end

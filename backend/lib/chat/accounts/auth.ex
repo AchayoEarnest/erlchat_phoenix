@@ -77,8 +77,9 @@ defmodule Chat.Auth do
     }
 
     signer = Chat.Auth.Token.signer()
-    {:ok, access_token}  = Chat.Auth.Token.generate_and_sign(access_claims, signer)
-    {:ok, refresh_token} = Chat.Auth.Token.generate_and_sign(refresh_claims, signer)
+    # BUG FIX: Joken 2.x returns {:ok, token, claims} (3-tuple), not {:ok, token}
+    {:ok, access_token, _}  = Chat.Auth.Token.generate_and_sign(access_claims, signer)
+    {:ok, refresh_token, _} = Chat.Auth.Token.generate_and_sign(refresh_claims, signer)
 
     {:ok, %{
       access_token:  access_token,

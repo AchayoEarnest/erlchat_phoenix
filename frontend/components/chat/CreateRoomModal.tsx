@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { api } from '@/services/api';
 import { useChatStore } from '@/store/chat';
 import { X, Hash, Lock } from 'lucide-react';
-import { wsService } from '@/services/websocket';
+import { wsService } from '@/services/phoenix-socket';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 

@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { Message } from '@/types';
 import { useChatStore, useAuthStore } from '@/store/chat';
 import { api } from '@/services/api';
-import { wsService } from '@/services/websocket';
+import { wsService } from '@/services/phoenix-socket';
 import { Avatar } from '@/components/ui/Avatar';
 import { formatMessageTime, formatFullDate } from '@/lib/utils';
 import {
