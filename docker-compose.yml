@@ -6,7 +6,7 @@ services:
     image: postgres:16-alpine
     container_name: erlchat_postgres
     environment:
-      POSTGRES_DB:       ${DB_NAME:-chat_prod}
+      POSTGRES_DB:       ${DB_NAME:-chat_dev}
       POSTGRES_USER:     ${DB_USER:-chatuser}
       POSTGRES_PASSWORD: ${DB_PASS:-chatpass}
     volumes:
@@ -43,7 +43,7 @@ services:
       dockerfile: Dockerfile
     container_name: erlchat_backend
     environment:
-      DATABASE_URL:    "ecto://${DB_USER:-chatuser}:${DB_PASS:-chatpass}@postgres/${DB_NAME:-chat_prod}"
+      DATABASE_URL:    "ecto://${DB_USER:-chatuser}:${DB_PASS:-chatpass}@postgres/${DB_NAME:-chat_dev}"
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       JWT_SECRET:      ${JWT_SECRET}
       PHX_HOST:        ${PHX_HOST:-localhost}

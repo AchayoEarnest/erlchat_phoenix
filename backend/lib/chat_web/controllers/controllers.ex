@@ -174,17 +174,16 @@ defmodule ChatWeb.UserController do
 
   def create(conn, %{"user" => user_params}) do
     with {:ok, user} <- Accounts.create_user(user_params),
-         {:ok, token} <- Accounts.generate_token(user) do
+         {:ok, tokens} <- Accounts.generate_token(user) do
       conn
       |> put_status(:created)
-      |> render(:show, user: user, token: token)
+      |> render(:show, user: user, token: tokens)
     end
   end
 
   def sign_in(conn, %{"email" => email, "password" => password}) do
-    with {:ok, user} <- Accounts.authenticate_user(email, password),
-         {:ok, token} <- Accounts.generate_token(user) do
-      render(conn, :show, user: user, token: token)
+    with {:ok, %{user: user, tokens: tokens}} <- Accounts.authenticate_user(email, password) do
+      render(conn, :show, user: user, token: tokens)
     end
   end
 end
