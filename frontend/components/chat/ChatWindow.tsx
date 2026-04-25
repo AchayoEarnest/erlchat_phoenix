@@ -18,17 +18,32 @@ interface Props { roomId: string; }
 export function ChatWindow({ roomId }: Props) {
   const { rooms, messages, prependMessages } = useChatStore();
   const { user } = useAuthStore();
-  const { sendMessage, sendTyping, loadMessages } = useWebSocket();
+  const { sendMessage, sendTyping, loadMessages, joinRoom, leaveRoom } = useWebSocket();
 
   const room = rooms[roomId];
   const roomMessages = messages[roomId] || [];
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [channelReady, setChannelReady] = useState(false);
   const bottomRef   = useRef<HTMLDivElement>(null);
   const topRef      = useRef<HTMLDivElement>(null);
   const scrollRef   = useRef<HTMLDivElement>(null);
   const isAtBottom  = useRef(true);
+
+  // Join the Phoenix channel when this room mounts, leave when it unmounts
+  useEffect(() => {
+    setChannelReady(false);
+    setHasMore(true);
+    joinRoom(roomId);
+    // Give the channel a moment to complete its join handshake
+    const t = setTimeout(() => setChannelReady(true), 500);
+    return () => {
+      clearTimeout(t);
+      leaveRoom(roomId);
+      setChannelReady(false);
+    };
+  }, [roomId, joinRoom, leaveRoom]);
 
   // Scroll to bottom when new messages arrive (if already at bottom)
   useEffect(() => {
@@ -39,7 +54,7 @@ export function ChatWindow({ roomId }: Props) {
 
   // Infinite scroll — load older messages via channel push
   const handleTopVisible = useCallback(async () => {
-    if (!hasMore || isLoadingMore || roomMessages.length === 0) return;
+    if (!channelReady || !hasMore || isLoadingMore || roomMessages.length === 0) return;
 
     const oldest     = roomMessages[0] as Message;
     const prevHeight = scrollRef.current?.scrollHeight || 0;
@@ -68,7 +83,7 @@ export function ChatWindow({ roomId }: Props) {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [hasMore, isLoadingMore, roomId, roomMessages, loadMessages, prependMessages]);
+  }, [channelReady, hasMore, isLoadingMore, roomId, roomMessages, loadMessages, prependMessages]);
 
   useIntersectionObserver(topRef, handleTopVisible, { threshold: 0.1 });
 

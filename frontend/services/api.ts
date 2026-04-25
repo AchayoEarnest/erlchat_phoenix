@@ -150,11 +150,17 @@ class ApiService {
     return res.data.data;
   }
 
+  async getThreadMessages(threadId: string) {
+    const res = await this.client.get(`/threads/${threadId}/messages`);
+    return res.data.data as Message[];
+  }
+
   // ── Files ──────────────────────────────────────────────────────
 
-  async uploadFile(file: File, onProgress?: (pct: number) => void) {
+  async uploadFile(file: File, onProgress?: (pct: number) => void, roomId?: string) {
     const form = new FormData();
     form.append('file', file);
+    if (roomId) form.append('room_id', roomId);
     const res = await this.client.post('/files/upload', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (e) => {

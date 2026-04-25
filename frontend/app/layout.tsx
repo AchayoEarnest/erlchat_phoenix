@@ -1,5 +1,6 @@
 // app/layout.tsx
 import type { Metadata } from 'next';
+import { AuthInitializer } from '@/components/AuthInitializer';
 import { Toaster } from 'react-hot-toast';
 import './globals.css';
 
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="bg-gray-950 text-gray-100 antialiased font-sans">
+        <AuthInitializer />
         {children}
         <Toaster
           position="bottom-right"

@@ -251,7 +251,8 @@ defmodule ChatWeb.FileController do
 
   alias Chat.Files
 
-  def upload(conn, %{"file" => upload, "room_id" => room_id}) do
+  def upload(conn, %{"file" => upload} = params) do
+    room_id = Map.get(params, "room_id")
     with {:ok, file} <- Files.save(upload, conn.assigns.current_user.id, room_id) do
       conn
       |> put_status(:created)

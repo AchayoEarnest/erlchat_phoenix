@@ -95,7 +95,7 @@ export function MessageInput({ roomId, roomName, onSend, onTyping, threadId, pla
 
       setIsUploading(true);
       try {
-        const attachment = await api.uploadFile(file, setUploadProgress);
+        const attachment = await api.uploadFile(file, setUploadProgress, roomId);
         setPendingFiles(prev => [...prev, attachment]);
       } catch (err) {
         toast.error(`Failed to upload ${file.name}`);
